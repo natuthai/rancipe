@@ -189,11 +189,12 @@ function passFilters(r){
 }
 function renderFridge(){
   if(!$('fridgeResults')) return; const words=splitList($('ingredientInput').value).map(normalize).filter(Boolean);
+  const hasFilter = !!(activeCat || activeCuisine || activeTime || activeDiff); // กรองอย่างเดียวก็ขึ้นเมนู ไม่ต้องพิมพ์วัตถุดิบก่อน
   let list=recipes.filter(passFilters);
   if(words.length){ list=list.map(r=>{ const text=recipeText(r); const score=words.reduce((s,w)=>s+((text.includes(w)||(aliasMap[w]&&text.includes(aliasMap[w])))?1:0),0); return {...r,_score:score}; }).filter(r=>r._score>0).sort((a,b)=>b._score-a._score || String(a.menu_name).localeCompare(String(b.menu_name),'th')); }
-  else list=[];
-  $('fridgeTitle').textContent = words.length ? 'เมนูแนะนำจาก “'+words.join(', ')+'”' : 'ใส่วัตถุดิบก่อน'; $('fridgeCount').textContent = list.length ? list.length+' เมนู' : '';
-  $('fridgeResults').innerHTML = list.length ? list.map(cardHTML).join('') : `<div class="empty">พิมพ์วัตถุดิบ เช่น ไข่ / หมู / ไก่ / กุ้ง แล้วเมนูจะขึ้นที่นี่ทันที</div>`;
+  else if(!hasFilter) list=[];
+  $('fridgeTitle').textContent = words.length ? 'เมนูแนะนำจาก “'+words.join(', ')+'”' : (hasFilter ? 'เมนูตามตัวกรอง' : 'ใส่วัตถุดิบก่อน'); $('fridgeCount').textContent = list.length ? list.length+' เมนู' : '';
+  $('fridgeResults').innerHTML = list.length ? list.map(cardHTML).join('') : (hasFilter ? `<div class="empty">ไม่พบเมนูที่ตรงกับตัวกรองนี้ ลองเปลี่ยนหรือเอาตัวกรองบางอันออก</div>` : `<div class="empty">พิมพ์วัตถุดิบ เช่น ไข่ / หมู / ไก่ / กุ้ง แล้วเมนูจะขึ้นที่นี่ทันที</div>`);
 }
 function cardHTML(r){ const idx=recipes.indexOf(r); return `<div class="menuCard" onclick="openDetailById('${String(r.id||idx).replace(/'/g,"\\'")}')"><div class="menuName">${escapeHTML(r.menu_name)}</div><div class="meta">${escapeHTML([r.cuisine, r.category||'-'].filter(Boolean).join(' • '))} • ${escapeHTML(r.cook_time_min||'-')} นาที • ${escapeHTML(r.difficulty||'-')}</div></div>`; }
 function openDetailById(id){ const r=recipes.find((x,i)=>String(x.id||i)===String(id)); if(r) openDetail(r); }
