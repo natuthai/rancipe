@@ -179,7 +179,7 @@ function toggleIngredient(word){
   const input=$('ingredientInput'); const parts=splitList(input.value); const exists=parts.includes(word); const next=exists?parts.filter(x=>x!==word):parts.concat(word); input.value=next.join(', '); renderFridge();
 }
 $('ingredientInput').addEventListener('input', renderFridge);
-function recipeText(r){ return normalize([r.menu_name,r.category,r.main_ingredients,r.seasonings,r.search_keywords].join(' ')); }
+function recipeText(r){ return normalize([r.menu_name,r.cuisine,r.category,r.main_ingredients,r.seasonings,r.search_keywords].join(' ')); }
 function passFilters(r){
   if(activeCat && r.category!==activeCat) return false;
   if(activeCuisine && r.cuisine!==activeCuisine) return false;
