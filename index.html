@@ -89,17 +89,17 @@
 
   <section class="settings hidden" aria-hidden="true">
     <div class="status"><span id="statusDot" class="dot load"></span><span id="statusText">กำลังโหลดข้อมูล...</span><span id="recipeCount" style="margin-left:auto"></span></div>
-    <input id="csvUrl" type="hidden" value="" />
   </section>
 </div>
 
 <div id="detail" class="detail" onclick="if(event.target.id==='detail') closeDetail()">
-  <div class="sheet"><div class="detailHead"><div><h2 id="detailName" style="font-size:42px"></h2><p class="lead" id="detailMeta"></p></div><button class="close" onclick="closeDetail()">×</button></div><div class="two"><div class="infoBox"><h4>วัตถุดิบ สูตรสำหรับ 1 ที่</h4><div id="detailIng" class="listText"></div></div><div class="infoBox"><h4>เครื่องปรุง</h4><div id="detailSeason" class="listText"></div></div></div><div class="infoBox" style="margin-top:14px"><h4>วิธีทำ</h4><ol id="detailSteps" class="steps"></ol></div></div>
+  <div class="sheet"><div class="detailHead"><div><h2 id="detailName" style="font-size:42px"></h2><p class="lead" id="detailMeta"></p></div><button class="close" onclick="closeDetail()">×</button></div><div class="two"><div class="infoBox"><h4>วัตถุดิบหลัก</h4><div id="detailIng" class="listText"></div></div><div class="infoBox"><h4>วัตถุดิบเสริม</h4><div id="detailSeason" class="listText"></div></div></div><div class="infoBox" style="margin-top:14px"><h4>วิธีทำ</h4><ol id="detailSteps" class="steps"></ol></div></div>
 </div>
 
 <script>
-const DEFAULT_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSXtD-8zk3ObR-IWWW1Xr-nSmR7wGl7Rq0sZhtkUd2nPZ3Qj1sOwKDsTm464s4KQQ/pub?gid=1844689064&single=true&output=csv";
-let recipes = []; let cuisineList = [];
+const DATA_URL = "data/recipes.csv";
+const ALIASES_URL = "data/ingredient_aliases.csv";
+let recipes = []; let cuisineList = []; let aliasMap = {};
 let activeCat = ""; let activeCuisine = ""; let activeTime = ""; let activeDiff = ""; let lastRandomCategory = ""; let lastRandomCuisine = "";
 const fallbackRecipes = [
   {id:"demo1",menu_name:"ไข่เจียว",category:"เมนูไข่",cuisine:"อาหารไทย",main_ingredients:"ไข่ไก่ 2 ฟอง",seasonings:"น้ำปลา 1 ช้อนชา, น้ำมันพืช 2 ช้อนโต๊ะ",instructions:"ตอกไข่ใส่ชาม\nปรุงรสด้วยน้ำปลา\nตีไข่ให้เข้ากัน\nตั้งกระทะใส่น้ำมันให้ร้อน\nเทไข่ลงทอดจนสุกเหลือง",cook_time_min:"5",difficulty:"ง่าย",search_keywords:"ไข่, ไข่เจียว, ทอด"}
@@ -110,7 +110,7 @@ function showOnly(id){ ['home','fridge','random'].forEach(x=>$(x).classList.togg
 function showHome(){showOnly('home')} function showFridge(){showOnly('fridge'); renderFridge()} function showRandom(){showOnly('random')}
 function normalize(s){return String(s||'').toLowerCase().replace(/[\u200B-\u200D\uFEFF]/g,'').trim();}
 function splitList(s){ return String(s||'').split(/[,，、|/]/).map(x=>x.trim()).filter(Boolean); }
-function parseCSV(text){
+function parseCSV(text, key='menu_name'){
   const rows=[]; let row=[], field='', inQuotes=false;
   for(let i=0;i<text.length;i++){
     const c=text[i], n=text[i+1];
@@ -123,26 +123,40 @@ function parseCSV(text){
   row.push(field); if(row.some(v=>String(v).trim()!=='')) rows.push(row);
   if(!rows.length) return [];
   const headers=rows[0].map(h=>h.trim());
-  return rows.slice(1).map(r=>{ const o={}; headers.forEach((h,i)=>o[h]=String(r[i]||'').trim()); return o; }).filter(o=>o.menu_name);
+  return rows.slice(1).map(r=>{ const o={}; headers.forEach((h,i)=>o[h]=String(r[i]||'').trim()); return o; }).filter(o=>o[key]);
 }
 async function fetchWithTimeout(url, ms=10000){
   const ctrl = new AbortController(); const t=setTimeout(()=>ctrl.abort(),ms);
-  try{ const res = await fetch(url, {signal:ctrl.signal, cache:'no-store'}); clearTimeout(t); if(!res.ok) throw new Error('HTTP '+res.status); return await res.text(); }
+  try{ const res = await fetch(url, {signal:ctrl.signal, cache:'no-cache'}); clearTimeout(t); if(!res.ok) throw new Error('HTTP '+res.status); return await res.text(); }
   catch(e){ clearTimeout(t); throw e; }
 }
-async function loadRecipes(force=false){
-  const url = DEFAULT_CSV_URL; setStatus('load','กำลังโหลดข้อมูล...');
+// ปรับข้อมูลจากไฟล์ CSV ให้ตรงกับที่หน้าเว็บใช้ (เวลาเป็นตัวเลข, ความยาก, คำค้นจาก tags)
+function normalizeRecipe(r){
+  const o={...r};
+  if(!o.cook_time_min){ const m=String(o.cook_time||'').match(/\d+/); o.cook_time_min = m ? m[0] : ''; }
+  if(o.difficulty==='ปานกลาง') o.difficulty='กลาง';
+  if(!o.search_keywords && o.tags) o.search_keywords=o.tags;
+  return o;
+}
+// ชื่อเรียกอื่น -> ชื่อหลัก (จาก data/ingredient_aliases.csv) เช่น ไข่ไก่ -> ไข่, มาม่า -> บะหมี่กึ่งสำเร็จรูป
+function buildAliasMap(rows){
+  const map={};
+  rows.forEach(r=>{ const canon=normalize(r.canonical_ingredient); if(!canon) return; splitList(r.alias_words).forEach(a=>{ const k=normalize(a); if(k && k!==canon) map[k]=canon; }); });
+  return map;
+}
+async function loadRecipes(){
+  setStatus('load','กำลังโหลดข้อมูล...');
   try{
-    const sep = url.includes('?') ? '&' : '?';
-    const csv = await fetchWithTimeout(url + sep + '_=' + Date.now(), 12000);
-    const data = parseCSV(csv);
+    const data = parseCSV(await fetchWithTimeout(DATA_URL, 12000)).map(normalizeRecipe);
     if(!data.length) throw new Error('ไม่พบข้อมูลเมนู');
-    recipes = data; setStatus('ok','โหลด Google Sheet สำเร็จ'); initUI(); renderFridge();
+    recipes = data;
+    try{ aliasMap = buildAliasMap(parseCSV(await fetchWithTimeout(ALIASES_URL, 8000),'canonical_ingredient')); }
+    catch(e){ aliasMap = {}; console.warn('โหลดชื่อเรียกวัตถุดิบไม่ได้', e); }
+    setStatus('ok','โหลดข้อมูลสำเร็จ'); initUI(); renderFridge();
   }catch(err){
-    recipes = fallbackRecipes; setStatus('bad','โหลด Google Sheet ไม่ได้ ใช้เมนูสำรอง'); initUI(); renderFridge(); console.error(err);
+    recipes = fallbackRecipes.map(normalizeRecipe); aliasMap = {}; setStatus('bad','โหลดข้อมูลไม่ได้ ใช้เมนูสำรอง'); initUI(); renderFridge(); console.error(err);
   }
 }
-function resetCsvUrl(){ loadRecipes(true); }
 function unique(arr){ return [...new Set(arr.filter(Boolean))]; }
 function initUI(){
   const popular=['ไข่','ข้าว','หมู','หมูสับ','ไก่','กุ้ง','เต้าหู้','กระเทียม','พริก','ใบกะเพรา','มาม่า','น้ำปลา'];
@@ -157,7 +171,7 @@ function initUI(){
   $('randomCuisines').innerHTML = cuisineList.map((c,i)=>`<button class="chip" onclick="randomRecipe('',cuisineList[${i}])">${escapeHTML(c)}</button>`).join('');
   $('categoryFilters').innerHTML = [`<button class="chip ${!activeCat?'active':''}" onclick="setCat('')">ทุกหมวด</button>`].concat(cats.map(c=>`<button class="chip ${activeCat===c?'active':''}" onclick="setCat('${c.replace(/'/g,"\\'")}')">${c}</button>`)).join('');
   $('timeFilters').innerHTML = ['ทุกเวลา','ไม่เกิน 10 นาที','ไม่เกิน 20 นาที'].map((t,i)=>`<button class="chip ${(activeTime===(i?String(i):''))||(!activeTime&&!i)?'active':''}" onclick="setTime('${i?String(i):''}')">${t}</button>`).join('');
-  $('difficultyFilters').innerHTML = ['ทุกระดับ','ง่าย','ปานกลาง','ยาก'].map((d,i)=>`<button class="chip ${(activeDiff===d)||(!activeDiff&&!i)?'active':''}" onclick="setDiff('${i?d:''}')">${d}</button>`).join('');
+  $('difficultyFilters').innerHTML = ['ทุกระดับ','ง่าย','กลาง','ยาก'].map((d,i)=>`<button class="chip ${(activeDiff===d)||(!activeDiff&&!i)?'active':''}" onclick="setDiff('${i?d:''}')">${d}</button>`).join('');
   $('randomCats').innerHTML = cats.map(c=>`<button class="chip" onclick="randomRecipe('${c.replace(/'/g,"\\'")}')">${c}</button>`).join('');
 }
 function setCat(c){activeCat=c;initUI();renderFridge()} function setCuisine(i){activeCuisine=i<0?'':cuisineList[i];initUI();renderFridge()}function setTime(t){activeTime=t;initUI();renderFridge()} function setDiff(d){activeDiff=d;initUI();renderFridge()}
@@ -176,7 +190,7 @@ function passFilters(r){
 function renderFridge(){
   if(!$('fridgeResults')) return; const words=splitList($('ingredientInput').value).map(normalize).filter(Boolean);
   let list=recipes.filter(passFilters);
-  if(words.length){ list=list.map(r=>{ const text=recipeText(r); const score=words.reduce((s,w)=>s+(text.includes(w)?1:0),0); return {...r,_score:score}; }).filter(r=>r._score>0).sort((a,b)=>b._score-a._score || String(a.menu_name).localeCompare(String(b.menu_name),'th')); }
+  if(words.length){ list=list.map(r=>{ const text=recipeText(r); const score=words.reduce((s,w)=>s+((text.includes(w)||(aliasMap[w]&&text.includes(aliasMap[w])))?1:0),0); return {...r,_score:score}; }).filter(r=>r._score>0).sort((a,b)=>b._score-a._score || String(a.menu_name).localeCompare(String(b.menu_name),'th')); }
   else list=[];
   $('fridgeTitle').textContent = words.length ? 'เมนูแนะนำจาก “'+words.join(', ')+'”' : 'ใส่วัตถุดิบก่อน'; $('fridgeCount').textContent = list.length ? list.length+' เมนู' : '';
   $('fridgeResults').innerHTML = list.length ? list.map(cardHTML).join('') : `<div class="empty">พิมพ์วัตถุดิบ เช่น ไข่ / หมู / ไก่ / กุ้ง แล้วเมนูจะขึ้นที่นี่ทันที</div>`;
@@ -199,13 +213,13 @@ function splitSteps(text){
 function formatCommaList(text){ return splitList(text).map(escapeHTML).join('<br>'); }
 function openDetail(r){
   $('detailName').textContent=r.menu_name||''; $('detailMeta').textContent=[r.cuisine, r.category, r.cook_time_min? r.cook_time_min+' นาที':'', r.difficulty].filter(Boolean).join(' • ');
-  $('detailIng').innerHTML=formatCommaList(r.main_ingredients); $('detailSeason').innerHTML=formatCommaList(r.seasonings);
+  $('detailIng').innerHTML=formatCommaList(r.main_ingredients); $('detailSeason').innerHTML=formatCommaList(r.optional_ingredients||r.seasonings);
   const steps=splitSteps(r.instructions); $('detailSteps').innerHTML=steps.map(s=>`<li>${escapeHTML(s)}</li>`).join('') || '<li>ไม่มีข้อมูลวิธีทำ</li>';
   $('detail').classList.add('show');
 }
 function closeDetail(){ $('detail').classList.remove('show'); }
 function escapeHTML(s){ return String(s||'').replace(/[&<>"]/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
-window.addEventListener('DOMContentLoaded',()=>{ const input=$('csvUrl'); if(input) input.value=DEFAULT_CSV_URL; loadRecipes(); });
+window.addEventListener('DOMContentLoaded',()=>{ loadRecipes(); });
 </script>
 </body>
 </html>
