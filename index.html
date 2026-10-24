@@ -70,7 +70,7 @@
       <div class="row spaced"><div><h2>ล้างตู้เย็น</h2><p class="lead">ใส่วัตถุดิบ 1 อย่างก็ขึ้นเมนูให้เลือกได้เลย</p></div><button class="ghost" onclick="showHome()">← กลับ</button></div>
       <textarea id="ingredientInput" class="field" placeholder="เช่น ไข่ หรือ หมู หรือ ไก่"></textarea>
       <div class="label">กดเลือกวัตถุดิบยอดฮิต</div><div id="quickChips" class="chips"></div>
-      <div class="filterBlock"><div class="label">ฟิลเตอร์เพิ่มเติม เลือกหรือไม่เลือกก็ได้</div><div id="categoryFilters" class="chips"></div><div id="timeFilters" class="chips" style="margin-top:10px"></div><div id="difficultyFilters" class="chips" style="margin-top:10px"></div></div>
+      <div class="filterBlock"><div class="label">ฟิลเตอร์เพิ่มเติม เลือกหรือไม่เลือกก็ได้</div><div id="cuisineFilters" class="chips" style="margin-bottom:10px"></div><div id="categoryFilters" class="chips"></div><div id="timeFilters" class="chips" style="margin-top:10px"></div><div id="difficultyFilters" class="chips" style="margin-top:10px"></div></div>
     </div>
     <div class="panel"><div class="row spaced"><h3 class="sectionTitle" id="fridgeTitle">เมนูแนะนำ</h3><span class="muted" id="fridgeCount"></span></div><div id="fridgeResults" class="cards"></div></div>
   </section>
@@ -82,9 +82,9 @@
         <div class="bigAction" onclick="toggleCategoryPick()"><h3>เลือกหมวด</h3><p class="muted">อยากกินแนวไหน เลือกก่อนแล้วค่อยสุ่ม</p></div>
         <div class="bigAction" onclick="randomRecipe()"><h3>สุ่มไปเลย</h3><p class="muted">ระบบสุ่มจากทุกเมนูทันที</p></div>
       </div>
-      <div id="categoryPick" class="hidden"><div class="label">เลือกหมวด</div><div id="randomCats" class="categoryGrid"></div></div>
+      <div id="categoryPick" class="hidden"><div id="randomCuisineBlock"><div class="label">เลือกชาติอาหาร</div><div id="randomCuisines" class="categoryGrid" style="margin-bottom:14px"></div></div><div class="label">เลือกหมวด</div><div id="randomCats" class="categoryGrid"></div></div>
     </div>
-    <div class="panel hidden" id="randomResultPanel"><div class="row spaced"><h3 class="sectionTitle">เมนูที่ได้</h3><button class="ghost" onclick="randomRecipe(lastRandomCategory)">สุ่มใหม่</button></div><div id="randomResult" class="cards"></div></div>
+    <div class="panel hidden" id="randomResultPanel"><div class="row spaced"><h3 class="sectionTitle">เมนูที่ได้</h3><button class="ghost" onclick="randomRecipe(lastRandomCategory,lastRandomCuisine)">สุ่มใหม่</button></div><div id="randomResult" class="cards"></div></div>
   </section>
 
   <section class="settings hidden" aria-hidden="true">
@@ -99,10 +99,10 @@
 
 <script>
 const DEFAULT_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSXtD-8zk3ObR-IWWW1Xr-nSmR7wGl7Rq0sZhtkUd2nPZ3Qj1sOwKDsTm464s4KQQ/pub?gid=1844689064&single=true&output=csv";
-let recipes = [];
-let activeCat = ""; let activeTime = ""; let activeDiff = ""; let lastRandomCategory = "";
+let recipes = []; let cuisineList = [];
+let activeCat = ""; let activeCuisine = ""; let activeTime = ""; let activeDiff = ""; let lastRandomCategory = ""; let lastRandomCuisine = "";
 const fallbackRecipes = [
-  {id:"demo1",menu_name:"ไข่เจียว",category:"เมนูไข่",main_ingredients:"ไข่ไก่ 2 ฟอง",seasonings:"น้ำปลา 1 ช้อนชา, น้ำมันพืช 2 ช้อนโต๊ะ",instructions:"ตอกไข่ใส่ชาม\nปรุงรสด้วยน้ำปลา\nตีไข่ให้เข้ากัน\nตั้งกระทะใส่น้ำมันให้ร้อน\nเทไข่ลงทอดจนสุกเหลือง",cook_time_min:"5",difficulty:"ง่าย",search_keywords:"ไข่, ไข่เจียว, ทอด"}
+  {id:"demo1",menu_name:"ไข่เจียว",category:"เมนูไข่",cuisine:"อาหารไทย",main_ingredients:"ไข่ไก่ 2 ฟอง",seasonings:"น้ำปลา 1 ช้อนชา, น้ำมันพืช 2 ช้อนโต๊ะ",instructions:"ตอกไข่ใส่ชาม\nปรุงรสด้วยน้ำปลา\nตีไข่ให้เข้ากัน\nตั้งกระทะใส่น้ำมันให้ร้อน\nเทไข่ลงทอดจนสุกเหลือง",cook_time_min:"5",difficulty:"ง่าย",search_keywords:"ไข่, ไข่เจียว, ทอด"}
 ];
 const $ = id => document.getElementById(id);
 function setStatus(type, text){ const dot=$('statusDot'); dot.className='dot '+(type||''); $('statusText').textContent=text; $('recipeCount').textContent = recipes.length ? recipes.length + ' เมนู' : ''; }
@@ -148,12 +148,19 @@ function initUI(){
   const popular=['ไข่','ข้าว','หมู','หมูสับ','ไก่','กุ้ง','เต้าหู้','กระเทียม','พริก','ใบกะเพรา','มาม่า','น้ำปลา'];
   $('quickChips').innerHTML = popular.map(x=>`<button class="chip" onclick="toggleIngredient('${x.replace(/'/g,"\\'")}')">${x}</button>`).join('');
   const cats=unique(recipes.map(r=>r.category)).sort();
+  const cuisineCount={}; recipes.forEach(r=>{ if(r.cuisine) cuisineCount[r.cuisine]=(cuisineCount[r.cuisine]||0)+1; });
+  cuisineList = Object.keys(cuisineCount).sort((a,b)=>cuisineCount[b]-cuisineCount[a]||a.localeCompare(b,'th'));
+  if(activeCuisine && !cuisineList.includes(activeCuisine)) activeCuisine='';
+  $('cuisineFilters').style.display = cuisineList.length ? '' : 'none';
+  $('cuisineFilters').innerHTML = cuisineList.length ? [`<button class="chip ${!activeCuisine?'active':''}" onclick="setCuisine(-1)">ทุกชาติอาหาร</button>`].concat(cuisineList.map((c,i)=>`<button class="chip ${activeCuisine===c?'active':''}" onclick="setCuisine(${i})">${escapeHTML(c)}</button>`)).join('') : '';
+  $('randomCuisineBlock').classList.toggle('hidden', !cuisineList.length);
+  $('randomCuisines').innerHTML = cuisineList.map((c,i)=>`<button class="chip" onclick="randomRecipe('',cuisineList[${i}])">${escapeHTML(c)}</button>`).join('');
   $('categoryFilters').innerHTML = [`<button class="chip ${!activeCat?'active':''}" onclick="setCat('')">ทุกหมวด</button>`].concat(cats.map(c=>`<button class="chip ${activeCat===c?'active':''}" onclick="setCat('${c.replace(/'/g,"\\'")}')">${c}</button>`)).join('');
   $('timeFilters').innerHTML = ['ทุกเวลา','ไม่เกิน 10 นาที','ไม่เกิน 20 นาที'].map((t,i)=>`<button class="chip ${(activeTime===(i?String(i):''))||(!activeTime&&!i)?'active':''}" onclick="setTime('${i?String(i):''}')">${t}</button>`).join('');
   $('difficultyFilters').innerHTML = ['ทุกระดับ','ง่าย','ปานกลาง','ยาก'].map((d,i)=>`<button class="chip ${(activeDiff===d)||(!activeDiff&&!i)?'active':''}" onclick="setDiff('${i?d:''}')">${d}</button>`).join('');
   $('randomCats').innerHTML = cats.map(c=>`<button class="chip" onclick="randomRecipe('${c.replace(/'/g,"\\'")}')">${c}</button>`).join('');
 }
-function setCat(c){activeCat=c;initUI();renderFridge()} function setTime(t){activeTime=t;initUI();renderFridge()} function setDiff(d){activeDiff=d;initUI();renderFridge()}
+function setCat(c){activeCat=c;initUI();renderFridge()} function setCuisine(i){activeCuisine=i<0?'':cuisineList[i];initUI();renderFridge()}function setTime(t){activeTime=t;initUI();renderFridge()} function setDiff(d){activeDiff=d;initUI();renderFridge()}
 function toggleIngredient(word){
   const input=$('ingredientInput'); const parts=splitList(input.value); const exists=parts.includes(word); const next=exists?parts.filter(x=>x!==word):parts.concat(word); input.value=next.join(', '); renderFridge();
 }
@@ -161,6 +168,7 @@ $('ingredientInput').addEventListener('input', renderFridge);
 function recipeText(r){ return normalize([r.menu_name,r.category,r.main_ingredients,r.seasonings,r.search_keywords].join(' ')); }
 function passFilters(r){
   if(activeCat && r.category!==activeCat) return false;
+  if(activeCuisine && r.cuisine!==activeCuisine) return false;
   const min=parseInt(String(r.cook_time_min||'').match(/\d+/)?.[0]||'999',10);
   if(activeTime==='1' && min>10) return false; if(activeTime==='2' && min>20) return false;
   if(activeDiff && r.difficulty!==activeDiff) return false; return true;
@@ -173,11 +181,11 @@ function renderFridge(){
   $('fridgeTitle').textContent = words.length ? 'เมนูแนะนำจาก “'+words.join(', ')+'”' : 'ใส่วัตถุดิบก่อน'; $('fridgeCount').textContent = list.length ? list.length+' เมนู' : '';
   $('fridgeResults').innerHTML = list.length ? list.map(cardHTML).join('') : `<div class="empty">พิมพ์วัตถุดิบ เช่น ไข่ / หมู / ไก่ / กุ้ง แล้วเมนูจะขึ้นที่นี่ทันที</div>`;
 }
-function cardHTML(r){ const idx=recipes.indexOf(r); return `<div class="menuCard" onclick="openDetailById('${String(r.id||idx).replace(/'/g,"\\'")}')"><div class="menuName">${escapeHTML(r.menu_name)}</div><div class="meta">${escapeHTML(r.category||'-')} • ${escapeHTML(r.cook_time_min||'-')} นาที • ${escapeHTML(r.difficulty||'-')}</div></div>`; }
+function cardHTML(r){ const idx=recipes.indexOf(r); return `<div class="menuCard" onclick="openDetailById('${String(r.id||idx).replace(/'/g,"\\'")}')"><div class="menuName">${escapeHTML(r.menu_name)}</div><div class="meta">${escapeHTML([r.cuisine, r.category||'-'].filter(Boolean).join(' • '))} • ${escapeHTML(r.cook_time_min||'-')} นาที • ${escapeHTML(r.difficulty||'-')}</div></div>`; }
 function openDetailById(id){ const r=recipes.find((x,i)=>String(x.id||i)===String(id)); if(r) openDetail(r); }
 function toggleCategoryPick(){ $('categoryPick').classList.toggle('hidden'); }
-function randomRecipe(cat=''){
-  lastRandomCategory=cat; const pool=recipes.filter(r=>!cat || r.category===cat); if(!pool.length) return; const r=pool[Math.floor(Math.random()*pool.length)]; $('randomResultPanel').classList.remove('hidden'); $('randomResult').innerHTML = cardHTML(r); openDetail(r);
+function randomRecipe(cat='',cuisine=''){
+  lastRandomCategory=cat; lastRandomCuisine=cuisine; const pool=recipes.filter(r=>(!cat || r.category===cat) && (!cuisine || r.cuisine===cuisine)); if(!pool.length) return; const r=pool[Math.floor(Math.random()*pool.length)]; $('randomResultPanel').classList.remove('hidden'); $('randomResult').innerHTML = cardHTML(r); openDetail(r);
 }
 function cleanStep(s){ return String(s||'').replace(/^[\s\u00A0]*(\d+[\.\)]\s*)+/g,'').trim(); }
 function splitSteps(text){
@@ -190,7 +198,7 @@ function splitSteps(text){
 }
 function formatCommaList(text){ return splitList(text).map(escapeHTML).join('<br>'); }
 function openDetail(r){
-  $('detailName').textContent=r.menu_name||''; $('detailMeta').textContent=[r.category, r.cook_time_min? r.cook_time_min+' นาที':'', r.difficulty].filter(Boolean).join(' • ');
+  $('detailName').textContent=r.menu_name||''; $('detailMeta').textContent=[r.cuisine, r.category, r.cook_time_min? r.cook_time_min+' นาที':'', r.difficulty].filter(Boolean).join(' • ');
   $('detailIng').innerHTML=formatCommaList(r.main_ingredients); $('detailSeason').innerHTML=formatCommaList(r.seasonings);
   const steps=splitSteps(r.instructions); $('detailSteps').innerHTML=steps.map(s=>`<li>${escapeHTML(s)}</li>`).join('') || '<li>ไม่มีข้อมูลวิธีทำ</li>';
   $('detail').classList.add('show');
